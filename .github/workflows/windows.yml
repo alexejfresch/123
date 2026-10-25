@@ -1,0 +1,29 @@
+name: Windows portable build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install, test and build
+        shell: pwsh
+        run: ./packaging/build-windows.ps1
+      - name: Launch packaged application without Google
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $process = Start-Process -FilePath dist\UIK-Reconcile\UIK-Reconcile.exe -ArgumentList '--data-dir', "$env:RUNNER_TEMP\uik-smoke", '--smoke-test' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Packaged application failed: $($process.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UIK-Reconcile-Windows-x64
+          path: dist/UIK-Reconcile/
+          if-no-files-found: error
