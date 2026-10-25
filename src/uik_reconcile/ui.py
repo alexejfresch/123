@@ -18,6 +18,8 @@ from .excel import read_table, sheet_names
 from .export import preview, write_xlsx
 from .google_source import GoogleSource, new_account, spreadsheet_id
 from .service import Service
+from .theme import apply_theme
+from . import __version__
 
 
 class WorkerSignals(QObject):
@@ -108,6 +110,7 @@ class ExportDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self, root):
         super().__init__()
+        apply_theme(QApplication.instance())
         self.service = Service(root)
         self.service.store.recover()
         self.root = Path(root)
@@ -117,7 +120,7 @@ class MainWindow(QMainWindow):
         self.workers = {}
         self.next_reads = {}
         self.records = []
-        self.setWindowTitle("Сверка УИК • Excel и Google Таблицы")
+        self.setWindowTitle(f"Сверка УИК {__version__} • Excel и Google Таблицы")
         self.resize(1280, 840)
         self.setMinimumSize(980, 650)
         self._build()
@@ -154,7 +157,12 @@ class MainWindow(QMainWindow):
         self.operation = QLabel("Готово к работе")
         self.operation.setWordWrap(True)
         layout.addWidget(self.operation)
+        self.project_hint = QLabel("Чтобы подключить таблицы, нажмите «Новый проект» и задайте название. Все разделы можно открыть уже сейчас.")
+        self.project_hint.setObjectName("projectHint")
+        self.project_hint.setWordWrap(True)
+        layout.addWidget(self.project_hint)
         self.tabs = QTabWidget()
+        self.tabs.setUsesScrollButtons(True)
         layout.addWidget(self.tabs)
         self._summary_page()
         self._sources_page()
@@ -168,16 +176,6 @@ class MainWindow(QMainWindow):
         self.projects.currentIndexChanged.connect(self.project_changed)
         self.pairs.currentIndexChanged.connect(self.pair_changed)
         self.statusBar().showMessage(f"Рабочая папка: {self.root}")
-        self.setStyleSheet("""
-            QMainWindow { background: #f3f6fa; }
-            QTabWidget::pane { border: 1px solid #cfd8e3; background: white; }
-            QTabBar::tab { padding: 10px 9px; }
-            QTabBar::tab:selected { color: #155b82; font-weight: bold; }
-            QPushButton { padding: 7px 12px; }
-            QLineEdit, QComboBox, QSpinBox { padding: 5px; }
-            QTableWidget { border: 1px solid #dce3eb; gridline-color: #e7edf3; }
-            QHeaderView::section { background: #eaf0f6; padding: 8px; border: 0; }
-        """)
 
     def _summary_page(self):
         layout = page(self.tabs, "Главная сводка")
@@ -358,8 +356,12 @@ class MainWindow(QMainWindow):
             for row in self.service.store.query("SELECT id,slot,active FROM pairs WHERE project_id=? ORDER BY slot", (self.project_id,)):
                 self.pairs.addItem(f"Пара {row['slot']}" + ("" if row["active"] else " (выключена)"), row["id"])
         self.pairs.blockSignals(False)
-        for i in range(1, self.tabs.count()):
-            self.tabs.setTabEnabled(i, bool(self.pair_id))
+        # Навигация доступна и до создания проекта. Ограничиваются только действия с данными.
+        self.project_hint.setVisible(not bool(self.pair_id))
+        self.pairs.setEnabled(bool(self.pair_id))
+        for kind in (QPushButton, QLineEdit, QComboBox, QCheckBox, QSpinBox):
+            for control in self.tabs.findChildren(kind):
+                control.setEnabled(bool(self.pair_id))
         self.check_now.setEnabled(bool(self.pair_id))
         self.pair_changed()
 

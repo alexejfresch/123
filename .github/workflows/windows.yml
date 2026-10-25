@@ -2,7 +2,7 @@ name: Windows portable build
 on:
   workflow_dispatch:
   push:
-    branches: [build-windows-v1.0.0]
+    branches: [fix-ui-v1.0.1]
     paths:
       - '.github/workflows/windows.yml'
       - 'packaging/**'
@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-portable-v1.0.0
+  group: windows-portable-v1.0.1
   cancel-in-progress: false
 
 jobs:
@@ -52,11 +52,11 @@ jobs:
           if (-not $qtWindowsPlugin) { throw 'Qt Windows platform plugin is missing' }
           [xml]$uikTests = Get-Content build/test-results.xml
           $suite = $uikTests.testsuites.testsuite
-          if ([int]$suite.tests -lt 40 -or [int]$suite.failures -ne 0 -or [int]$suite.errors -ne 0 -or [int]$suite.skipped -ne 0) {
-            throw 'Expected at least 40 completed tests without failures, errors or skips'
+          if ([int]$suite.tests -lt 44 -or [int]$suite.failures -ne 0 -or [int]$suite.errors -ne 0 -or [int]$suite.skipped -ne 0) {
+            throw 'Expected at least 44 completed tests without failures, errors or skips'
           }
           @"
-          UIK-Reconcile 1.0.0 - Windows x64 test build
+          UIK-Reconcile 1.0.1 - Windows x64 test build
           Source commit: $env:GITHUB_SHA
           Tests passed: $($suite.tests)
           Packaged EXE: offscreen startup and SQLite creation passed on Windows.
@@ -75,6 +75,8 @@ jobs:
           @"
           Тестовая переносимая сборка для Windows x64. Python устанавливать не требуется.
 
+          Версия 1.0.1: исправлены переключение вкладок при первом запуске и контраст текста при тёмной теме Windows. Формат базы и настроек сохранён.
+
           Скачайте UIK-Reconcile-Windows-x64.zip, полностью распакуйте его и запустите UIK-Reconcile.exe внутри папки UIK-Reconcile.
 
           Проверено на Windows runner: автоматические тесты, сборка PyInstaller, запуск EXE без дисплея и создание SQLite.
@@ -91,7 +93,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v1.0.0-windows-test dist/UIK-Reconcile-Windows-x64.zip dist/SHA256SUMS.txt --target "$env:GITHUB_SHA" --prerelease --title 'Сверка УИК 1.0.0 — Windows, тестовая сборка' --notes-file dist/RELEASE_NOTES.md
+          gh release create v1.0.1-windows-test dist/UIK-Reconcile-Windows-x64.zip dist/SHA256SUMS.txt --target "$env:GITHUB_SHA" --prerelease --title 'Сверка УИК 1.0.1 — Windows, тестовая сборка' --notes-file dist/RELEASE_NOTES.md
           if ($LASTEXITCODE -ne 0) { throw 'Could not publish the Windows test release' }
       - uses: actions/upload-artifact@v4
         if: always()
@@ -124,11 +126,11 @@ jobs:
           if ($env:BUILD_OUTCOME -ne 'success' -and (Test-Path "$env:RUNNER_TEMP/uik-build.log")) {
             $uikResult['build_log_tail'] = @(Get-Content "$env:RUNNER_TEMP/uik-build.log" -Tail 100)
           }
-          $uikResult | ConvertTo-Json -Depth 5 | Set-Content build-results/windows-v1.0.0.json -Encoding utf8
+          $uikResult | ConvertTo-Json -Depth 5 | Set-Content build-results/windows-v1.0.1.json -Encoding utf8
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add build-results/windows-v1.0.0.json
+          git add build-results/windows-v1.0.1.json
           git commit -m 'Record Windows build result [skip ci]'
           if ($LASTEXITCODE -ne 0) { throw 'Could not save build result' }
-          git push origin HEAD:refs/heads/build-windows-v1.0.0
+          git push origin HEAD:refs/heads/fix-ui-v1.0.1
           if ($LASTEXITCODE -ne 0) { throw 'Could not upload build result' }

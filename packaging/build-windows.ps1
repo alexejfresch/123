@@ -14,5 +14,6 @@ if ($LASTEXITCODE -ne 0) { throw "Тесты не пройдены" }
 & .venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --windowed --onedir --name UIK-Reconcile --collect-data googleapiclient --hidden-import keyring.backends.Windows packaging/launcher.py
 if ($LASTEXITCODE -ne 0) { throw "Ошибка сборки" }
 Copy-Item docs\USER_GUIDE.md dist\UIK-Reconcile\Инструкция.md
+Copy-Item docs\CHANGELOG.md dist\UIK-Reconcile\Изменения.md
 Copy-Item examples dist\UIK-Reconcile\examples -Recurse -Force
 Write-Host "Создана папка dist\UIK-Reconcile. Проверьте запуск UIK-Reconcile.exe на Windows."

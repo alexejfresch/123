@@ -20,6 +20,8 @@ def main():
     from .ui import MainWindow
     QLocale.setDefault(QLocale("ru_RU"))
     app = QApplication(sys.argv[:1])
+    from .theme import apply_theme
+    apply_theme(app)
     translator = QTranslator(app)
     translator.load("qtbase_ru", QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath))
     app.installTranslator(translator)
