@@ -2,28 +2,133 @@ name: Windows portable build
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-  pull_request:
+    branches: [build-windows-v1.0.0]
+    paths:
+      - '.github/workflows/windows.yml'
+      - 'packaging/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'requirements.lock'
+      - 'pyproject.toml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-portable-v1.0.0
+  cancel-in-progress: false
 
 jobs:
   windows:
     runs-on: windows-2022
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          architecture: x64
       - name: Install, test and build
-        shell: pwsh
-        run: ./packaging/build-windows.ps1
-      - name: Launch packaged application without Google
+        id: build
         shell: pwsh
         run: |
+          Start-Transcript -Path "$env:RUNNER_TEMP/uik-build.log"
+          try { ./packaging/build-windows.ps1 } finally { Stop-Transcript }
+      - name: Verify packaged executable on Windows
+        id: smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
           $env:QT_QPA_PLATFORM = 'offscreen'
-          $process = Start-Process -FilePath dist\UIK-Reconcile\UIK-Reconcile.exe -ArgumentList '--data-dir', "$env:RUNNER_TEMP\uik-smoke", '--smoke-test' -Wait -PassThru
+          $uikSmokeDir = Join-Path $env:RUNNER_TEMP 'uik-smoke'
+          $process = Start-Process -FilePath dist\UIK-Reconcile\UIK-Reconcile.exe -ArgumentList '--data-dir', "`"$uikSmokeDir`"", '--smoke-test' -PassThru
+          if (-not $process.WaitForExit(60000)) {
+            $process.Kill()
+            throw 'EXE did not complete startup within 60 seconds'
+          }
           if ($process.ExitCode -ne 0) { throw "Packaged application failed: $($process.ExitCode)" }
+          if (-not (Test-Path "$uikSmokeDir/state.sqlite3")) { throw 'EXE did not create its SQLite database' }
+          $qtWindowsPlugin = Get-ChildItem dist\UIK-Reconcile -Recurse -Filter qwindows.dll
+          if (-not $qtWindowsPlugin) { throw 'Qt Windows platform plugin is missing' }
+          [xml]$uikTests = Get-Content build/test-results.xml
+          $suite = $uikTests.testsuites.testsuite
+          if ([int]$suite.tests -lt 40 -or [int]$suite.failures -ne 0 -or [int]$suite.errors -ne 0 -or [int]$suite.skipped -ne 0) {
+            throw 'Expected at least 40 completed tests without failures, errors or skips'
+          }
+          @"
+          UIK-Reconcile 1.0.0 - Windows x64 test build
+          Source commit: $env:GITHUB_SHA
+          Tests passed: $($suite.tests)
+          Packaged EXE: offscreen startup and SQLite creation passed on Windows.
+          Live Google OAuth and interactive use on a physical PC have not been verified.
+          Extract the entire folder before running UIK-Reconcile.exe.
+          Keep your existing data folder when updating; this package contains no user database.
+          "@ | Set-Content dist/UIK-Reconcile/BUILD_INFO.txt -Encoding utf8
+      - name: Create portable ZIP
+        id: package
+        shell: pwsh
+        run: |
+          if (Test-Path dist/UIK-Reconcile/data) { throw 'User data must not be included in the release' }
+          Compress-Archive -Path dist/UIK-Reconcile -DestinationPath dist/UIK-Reconcile-Windows-x64.zip -CompressionLevel Optimal
+          $uikHash = (Get-FileHash dist/UIK-Reconcile-Windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$uikHash  UIK-Reconcile-Windows-x64.zip" | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+          @"
+          Тестовая переносимая сборка для Windows x64. Python устанавливать не требуется.
+
+          Скачайте UIK-Reconcile-Windows-x64.zip, полностью распакуйте его и запустите UIK-Reconcile.exe внутри папки UIK-Reconcile.
+
+          Проверено на Windows runner: автоматические тесты, сборка PyInstaller, запуск EXE без дисплея и создание SQLite.
+          Не проверено: живая авторизация Google и интерактивная работа на вашем компьютере.
+
+          При обновлении закройте программу и сохраните свою папку data. В ZIP рабочая база не включена.
+
+          Исходный коммит: $env:GITHUB_SHA
+          SHA256 ZIP: $uikHash
+          "@ | Set-Content dist/RELEASE_NOTES.md -Encoding utf8
+      - name: Publish Windows test download
+        id: release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v1.0.0-windows-test dist/UIK-Reconcile-Windows-x64.zip dist/SHA256SUMS.txt --target "$env:GITHUB_SHA" --prerelease --title 'Сверка УИК 1.0.0 — Windows, тестовая сборка' --notes-file dist/RELEASE_NOTES.md
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the Windows test release' }
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: UIK-Reconcile-Windows-x64
-          path: dist/UIK-Reconcile/
-          if-no-files-found: error
+          path: |
+            dist/UIK-Reconcile-Windows-x64.zip
+            dist/SHA256SUMS.txt
+            build/test-results.xml
+          if-no-files-found: warn
+      - name: Save build result for verification
+        if: always()
+        shell: pwsh
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          PACKAGE_OUTCOME: ${{ steps.package.outcome }}
+          RELEASE_OUTCOME: ${{ steps.release.outcome }}
+        run: |
+          New-Item build-results -ItemType Directory -Force | Out-Null
+          $uikResult = [ordered]@{
+            source_commit = $env:GITHUB_SHA
+            run_url = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            build = $env:BUILD_OUTCOME
+            smoke = $env:SMOKE_OUTCOME
+            package = $env:PACKAGE_OUTCOME
+            release = $env:RELEASE_OUTCOME
+          }
+          if (Test-Path dist/SHA256SUMS.txt) { $uikResult['sha256'] = (Get-Content dist/SHA256SUMS.txt -Raw).Trim() }
+          if ($env:BUILD_OUTCOME -ne 'success' -and (Test-Path "$env:RUNNER_TEMP/uik-build.log")) {
+            $uikResult['build_log_tail'] = @(Get-Content "$env:RUNNER_TEMP/uik-build.log" -Tail 100)
+          }
+          $uikResult | ConvertTo-Json -Depth 5 | Set-Content build-results/windows-v1.0.0.json -Encoding utf8
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add build-results/windows-v1.0.0.json
+          git commit -m 'Record Windows build result [skip ci]'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not save build result' }
+          git push origin HEAD:refs/heads/build-windows-v1.0.0
+          if ($LASTEXITCODE -ne 0) { throw 'Could not upload build result' }
