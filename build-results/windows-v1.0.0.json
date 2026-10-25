@@ -1,0 +1,9 @@
+{
+  "source_commit": "21955070f500ae29939673188ad240130cc1f499",
+  "run_url": "https://github.com/alexejfresch/123/actions/runs/40210061925",
+  "build": "success",
+  "smoke": "success",
+  "package": "success",
+  "release": "success",
+  "sha256": "dca6010011afc57e6b04bbf4709a0a2a3516c448d6412867c862c9e3882a9bc0  UIK-Reconcile-Windows-x64.zip"
+}
